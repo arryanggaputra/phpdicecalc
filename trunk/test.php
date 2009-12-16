@@ -24,7 +24,7 @@ $expression = $_GET['expression'];
 $calc = new Calc($expression);
 
 echo htmlspecialchars($expression) . "\n";
-echo htmlspecialchars($calc->infix() . " = " . $calc->calc()) . "\n";
+echo $calc->infix() . " = " . $calc->calc() . "\n";
 
 ?>
 </pre>
