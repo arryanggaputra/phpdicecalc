@@ -13,6 +13,13 @@
 s {
 	color: #999;
 }
+.true {
+	color: green;
+	font-weight: bold;
+}
+.false {
+	color: #999;
+}
 </style>
 
 <pre><?php
@@ -24,7 +31,7 @@ $expression = $_GET['expression'];
 $calc = new Calc($expression);
 
 echo htmlspecialchars($expression) . "\n";
-echo $calc->infix() . " = " . $calc->calc() . "\n";
+echo $calc->infix() . " => " . $calc->calc() . "\n";
 
 ?>
 </pre>

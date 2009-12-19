@@ -9,25 +9,47 @@ class CalcSet
 
 	function __construct($v)
 	{
-		$this->label = $v;
 		if(is_array($v)) {
 			$this->values = $v;
+			$this->saved_values = $this->values;
+			$this->label = '[' . implode(',', $v) . ']';
 		}
 		else {
-			$v = trim($v, '[]');
-			$this->values = explode(',', $v);
+			$this->label = $v;
+			preg_match('%^(?P<multiple>\d*)\[(?P<set>[^\]]+)\]$%i', $v, $matches);
+			$v = $matches['set'];
+			$values = explode(',', $v);
+			for($z = 0; $z < max(1,intval($matches['multiple'])); $z++) {
+				foreach($values as $v) {
+					$this->values[] = $v;
+				}
+			}
+			$this->saved_values = $this->values;
+			foreach($this->values as $k => $v) {
+				$calc = new Calc($v);
+				$this->values[$k] = $calc->calc();
+			}
 		}
-		$this->saved_values = $this->values;
 	}
 	function __toString()
 	{
 		$out = array();
 		foreach($this->saved_values as $key => $value) {
+			$vout = $this->values[$key];
+			if(!isset($this->values[$key])) {
+				$vout = $this->saved_values[$key];
+			}
+			if($vout === true) {
+				$vout = '<span class="true">true</span>';
+			}
+			if($vout === false) {
+				$vout = '<span class="false">false</span>';
+			}
 			if(isset($this->values[$key])) {
-				$out[] = $this->values[$key];
+				$out[] = $vout;
 			}
 			else {
-				$out[] = '<s>' . $this->saved_values[$key] . '</s>';
+				$out[] = '<s>' . $vout . '</s>';
 			}
 		}
 		$out = '[' . implode(',', $out) . ']';
@@ -142,6 +164,28 @@ class CalcDice extends CalcSet
 			$this->values = array_slice($this->values, 0, intval($matches['lowdice']), true);
 		}
 	}
+	
+	function __toString()
+	{
+		$out = array();
+		foreach($this->saved_values as $key => $value) {
+			$vout = $this->saved_values[$key];
+			if($vout === true) {
+				$vout = '<span class="true">true</span>';
+			}
+			if($vout === false) {
+				$vout = '<span class="false">false</span>';
+			}
+			if(isset($this->values[$key])) {
+				$out[] = $vout;
+			}
+			else {
+				$out[] = '<s>' . $vout . '</s>';
+			}
+		}
+		$out = '[' . $this->label . ':' . implode(',', $out) . ']';
+		return $out;
+	}
 }
 
 class CalcOperation
@@ -159,6 +203,12 @@ class CalcOperation
 				return self::divide($operand1, $operand2);
 			case '^':
 				return self::exponent($operand1, $operand2);
+			case '>':
+				return self::greaterthan($operand1, $operand2);
+			case '<':
+				return self::lessthan($operand1, $operand2);
+			case '=':
+				return self::equalto($operand1, $operand2);
 		}
 	}
 	
@@ -199,11 +249,35 @@ class CalcOperation
 			return pow($r1, $r2);
 		}
 	}
+	
+	function greaterthan($r1, $r2)
+	{
+		if(is_numeric($r1) && is_numeric($r2)) {
+			return ($r1 > $r2);
+		}
+	}
+	
+	function lessthan($r1, $r2)
+	{
+		if(is_numeric($r1) && is_numeric($r2)) {
+			return ($r1 < $r2);
+		}
+	}
+	
+	function equalto($r1, $r2)
+	{
+		if(is_numeric($r1) && is_numeric($r2)) {
+			return ($r1 == $r2);
+		}
+	}
 }
 
 class Calc
 {
 	private $ooo = array(
+		'>' => 0,
+		'<' => 0,
+		'=' => 0,
 		'-' => 10,
 		'+' => 10,
 		'*' => 20,
@@ -219,7 +293,7 @@ class Calc
 	{
 		$this->expression = str_replace(' ', '', $expression);
 
-		preg_match_all('%(?:(?P<dice>' . DICE_REGEX . ')|(?P<set>\[[^\]]+\])|(?P<numeral>[\d\.]+)|(?P<operator>[+\-*^/])|(?P<parens>[()]))%i', $this->expression, $matches, PREG_SET_ORDER);
+		preg_match_all('%(?:(?P<dice>' . DICE_REGEX . ')|(?P<set>\d*\[[^\]]+\])|(?P<numeral>[\d\.]+)|(?P<operator>[+\-*^><=/])|(?P<parens>[()]))%i', $this->expression, $matches, PREG_SET_ORDER);
 		
 		$stack = array();
 		
@@ -299,7 +373,13 @@ class Calc
 			return 'Missing operator near "' . $stack[1] . '".';
 		}
 		else {
-			return reset($stack);
+			$out = reset($stack);
+			if(is_bool($out)) {
+				return $out ? '<span class="true">true</span>' : '<span class="false">false</span>';
+			}
+			else {
+				return $out;
+			}
 		}
 	}
 	
