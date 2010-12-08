@@ -1,6 +1,6 @@
 <?php
 
-define('DICE_REGEX', '(?P<multiple>\d*)d(?P<dietype>\d+|f|\%|\[[^\]]+\])((?P<keep>k(?:eep)?(?P<keepeval>[<>])(?P<keeprange>\d+))|(?P<lowest>l(?:owest)?(?P<lowdice>\d+))|(?P<highest>h(?:ighest)?(?P<highdice>\d+))|(?P<reroll>r(?:eroll)?(?P<rerolleval>[<>])(?P<rerolllimit>\d+))|(?P<flags>[o]+))*');
+define('DICE_REGEX', '(?P<multiple>\d*)d(?P<dietype>\d+|f|\%|\[[^\]]+\])((?P<keep>k(?:eep)?(?P<keepeval>[<>])(?P<keeprange>\d+))|(?P<lowest>l(?:owest)?(?P<lowdice>\d+))|(?P<highest>h(?:ighest)?(?P<highdice>\d+))|(?P<reroll>r(?:eroll)?(?P<rerolleval>[<>])(?P<rerolllimit>\d+))|(?P<openroll>o(?:pen)?(?P<openrolleval>[<>=])(?P<openrolllimit>\d+))|(?P<flags>[z]+))*');
 
 class CalcSet
 {
@@ -12,7 +12,7 @@ class CalcSet
 		if(is_array($v)) {
 			$this->values = $v;
 			$this->saved_values = $this->values;
-			$this->label = '[' . implode(',', $v) . ']';
+			$this->label = '[' . implode(', ', $v) . ']';
 		}
 		else {
 			$this->label = $v;
@@ -27,6 +27,10 @@ class CalcSet
 			$this->saved_values = $this->values;
 			foreach($this->values as $k => $v) {
 				$calc = new Calc($v);
+				$this->values[$k] = $calc->calc();
+			}
+			foreach($this->values as $k => $value) {
+				$calc = new Calc($value);
 				$this->values[$k] = $calc->calc();
 			}
 		}
@@ -52,7 +56,7 @@ class CalcSet
 				$out[] = '<s>' . $vout . '</s>';
 			}
 		}
-		$out = '[' . implode(',', $out) . ']';
+		$out = '[' . implode(', ', $out) . ']';
 		return $out;
 	}
 	
@@ -107,21 +111,8 @@ class CalcDice extends CalcSet
 		}
 		for($z = 0; $z < $matches['multiple']; $z++) {
 			$keep = true;
-		
-			if(is_numeric($matches['dietype'])) {
-				$newval = rand(1, $matches['dietype']);
-			}
-			elseif($matches['dietype'] == 'f') {
-				$newval = rand(-1, 1);
-			}
-			elseif($matches['dietype'] == '%') {
-				$newval = rand(1, 100);
-			}
-			elseif($matches['dietype'][0] == '[') {
-				$dietype = trim($matches['dietype'], '[]');
-				$opts = explode(',', $dietype);
-				$newval = $opts[rand(0, count($opts)-1)];
-			}
+
+			$newval = $this->rolltype($matches['dietype']);
 			
 			if($matches['reroll'] != '') {
 				$gtlt = $matches['rerolleval'];
@@ -135,6 +126,34 @@ class CalcDice extends CalcSet
 					$z--;
 				}
 			}
+			
+			if($matches['openroll'] != '') {
+				$gtlt = $matches['openrolleval'];
+				$range = intval($matches['openrolllimit']);
+				$addvals = array($newval);
+				$addval = $newval;
+				
+				if($gtlt == '<') {
+					while($addval < $range) {
+						$addval = $this->rolltype($matches['dietype']);
+						$addvals[] = $addval;
+					}
+				}
+				if($gtlt == '>') {
+					while($addval > $range) {
+						$addval = $this->rolltype($matches['dietype']);
+						$addvals[] = $addval;
+					}
+				}
+				if($gtlt == '=') {
+					while($addval == $range) {
+						$addval = $this->rolltype($matches['dietype']);
+						$addvals[] = $addval;
+					}
+				}
+				$newval = new Calc(implode('+', $addvals));
+				$newval = $newval->calc();
+			}
 
 			if($keep) {
 				$this->values['_' . count($this->values)] = $newval;
@@ -147,10 +166,11 @@ class CalcDice extends CalcSet
 			$gtlt = $matches['keepeval'];
 			$range = intval($matches['keeprange']);
 			foreach($this->values as $k => $v) {
-				if($gtlt == '>' && $v <= $range) {
+				$av = $v instanceof Calc ? $v->calc() : $v;
+				if($gtlt == '>' && $av <= $range) {
 					unset($this->values[$k]);
 				}
-				if($gtlt == '<' && $v >= $range) {
+				if($gtlt == '<' && $av >= $range) {
 					unset($this->values[$k]);
 				}
 			}
@@ -163,6 +183,24 @@ class CalcDice extends CalcSet
 		if(isset($matches['lowdice']) && $matches['lowdice'] != '') {
 			$this->values = array_slice($this->values, 0, intval($matches['lowdice']), true);
 		}
+	}
+	
+	function rolltype($dietype) {
+		if(is_numeric($dietype)) {
+			$newval = rand(1, $dietype);
+		}
+		elseif($dietype == 'f') {
+			$newval = rand(-1, 1);
+		}
+		elseif($dietype == '%') {
+			$newval = rand(1, 100);
+		}
+		elseif($dietype == '[') {
+			$dietype = trim($dietype, '[]');
+			$opts = explode(',', $dietype);
+			$newval = $opts[rand(0, count($opts)-1)];
+		}
+		return $newval;
 	}
 	
 	function __toString()
@@ -180,11 +218,27 @@ class CalcDice extends CalcSet
 				$out[] = $vout;
 			}
 			else {
-				$out[] = '<s>' . $vout . '</s>';
+				if($vout instanceof Calc) {
+					$out[] = '<s>' . $vout->calc() . '</s>';
+				}
+				else {
+					$out[] = '<s>' . $vout . '</s>';
+				}
 			}
 		}
-		$out = '[' . $this->label . ':' . implode(',', $out) . ']';
-		return $out;
+		$_out = '[' . $this->label . ':';
+		$comma = '';
+		foreach($out as $o) {
+			if($o instanceof Calc) {
+				$_out .= $comma . $o->calc();
+			}
+			else {
+				$_out .= $comma . $o;
+			}
+			$comma = ' + ';
+		}
+		$_out .= ']';
+		return $_out;
 	}
 }
 
@@ -212,12 +266,22 @@ class CalcOperation
 		}
 	}
 	
+	function reduce($r) {
+		if($r instanceof Calc) {
+			return $r->calc();
+		}
+		if(is_numeric($r)) {
+			return $r;
+		}
+		throw Exception('This is not a number');
+	}
+	
 	function add($r1, $r2)
 	{
-		if(is_numeric($r1) && is_numeric($r2)) {
-			return $r1 + $r2;
+		try{
+			return self::reduce($r1) + self::reduce($r2);
 		}
-		else {
+		catch(Exception $e) {
 			return $r1 . $r2;
 		}
 	}
@@ -252,8 +316,11 @@ class CalcOperation
 	
 	function greaterthan($r1, $r2)
 	{
-		if(is_numeric($r1) && is_numeric($r2)) {
-			return ($r1 > $r2);
+		try{
+			return self::reduce($r1) > self::reduce($r2);
+		}
+		catch(Exception $e) {
+			return $r1 > $r2;
 		}
 	}
 	
@@ -293,7 +360,7 @@ class Calc
 	{
 		$this->expression = str_replace(' ', '', $expression);
 
-		preg_match_all('%(?:(?P<dice>' . DICE_REGEX . ')|(?P<set>\d*\[[^\]]+\])|(?P<numeral>[\d\.]+)|(?P<operator>[+\-*^><=/])|(?P<parens>[()]))%i', $this->expression, $matches, PREG_SET_ORDER);
+		preg_match_all('%(?:(?P<dice>' . DICE_REGEX . ')|(?P<set>\d*\[[^\]]+\])|(?P<numeral>[\d\.]+)|(?P<operator>[+\-*^><=/])|(?P<variable>\$[a-z_]+)|(?P<parens>[()]))%i', $this->expression, $matches, PREG_SET_ORDER);
 		
 		$stack = array();
 		
@@ -320,6 +387,10 @@ class Calc
 				$stack[] = $match['operator'];
 				$this->infix[] = $match['operator'];
 			}
+			elseif(isset($match['variable'])) {
+				$this->rpn[] = $match['variable'];
+				$this->infix[] = end($this->rpn);
+			}
 			elseif(isset($match['parens'])) {
 				$this->infix[] = $match['parens'];
 				if($match['parens'] == '(') {
@@ -343,7 +414,7 @@ class Calc
 		}
 	}
 	
-	function calc()
+	function calc($vars = array() )
 	{
 
 		$stack = array();
@@ -357,6 +428,7 @@ class Calc
 				//print_r($stack);
 				$r1 = array_pop($stack);
 				$r2 = array_pop($stack);
+				
 				if(is_numeric($r1) && is_numeric($r2)) {
 					$stack[] = CalcOperation::calc($step, $r1, $r2);
 				}
