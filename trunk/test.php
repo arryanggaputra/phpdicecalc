@@ -31,7 +31,9 @@ $expression = $_GET['expression'];
 $calc = new Calc($expression);
 
 echo htmlspecialchars($expression) . "\n";
-echo $calc->infix() . " => " . $calc->calc() . "\n";
+echo $calc->infix();
+echo " => ";
+echo $calc->calc() . "\n";
 
 ?>
 </pre>
